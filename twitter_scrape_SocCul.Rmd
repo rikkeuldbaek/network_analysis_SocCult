@@ -1,0 +1,1350 @@
+---
+title: "twitter_scrape_SocCul"
+author: "Rikke Uldbæk"
+date: "4/4/2022"
+output: html_document
+---
+
+  
+Scraping tweets is very easy. First you need to connect R to Twitter's API. Load pacman and use it to get the necessary R packages. Secondly you need to provide keys and secret from your Twitter App to R.
+
+```{r}
+library(pacman)
+pacman::p_load("twitteR", "ROAuth", "instaR", "tidyverse", "tidytext", "stringr", "Sentida", "igraph") #packages for webscraping from R
+
+knitr::opts_chunk$set(echo = TRUE,include = TRUE, message = FALSE)
+
+knitr::opts_chunk$set(root.dir= "~/Desktop/Cognitive Science/Cognition and Communication/R - cogcom/Class 9 - NLP/NLP -TWEET/Class 9/tweets") #set working directory to where you wanna save tweeets
+```
+
+
+```{r}
+#Get your keys and secrets from your Twitter App
+#tutorial for setting up Twitter app can be found at https://www.r-bloggers.com/setting-up-the-twitter-r-package-for-text-analytics/
+
+consumer_key <- "npVEPKSL52LADeFUcKepJqfqe" #api key
+consumer_secret <- "h9DP9wspKVICG3oZpsLcpa4Foo8bYa9NBRJa87UFZWhjbO9ZaD" #api key secret
+access_token <- "846272095462002689-S0skgY7zVNt2Qk9HTSsdbeUO4w5tDa1" #access token
+access_secret <- "XuAY7hGY7CL2gkRGp6Q5EelhZQVyB8KWLpYzGj4HJDg3I" #access token secret
+
+setup_twitter_oauth(consumer_key, consumer_secret, access_token, access_secret)# will set up twitter in our environment for this session(has to be done for each session) 
+
+
+
+```
+
+SCRAPING TWITTER:
+The function searchTwitter does the hard job for it. It's first argument is a searchword, which either be a hashtag fx "#cogsci", or tweets from a person fx "from:KristanTylen". You can include "-filter:retweets" to remove retweets. You should do that.
+
+Using "since" and "until" you can specify period of search. However, it's not possible to retrieve tweets older than *7 days* (given our current level of access). 
+"lang" refers to the language of tweets. 
+
+There is a limit to how many tweets you can access before you have to wait some time, "retryOnRateLimit" is delay used when the function gets a warning from Twitter.
+The function "twLIstToDF" turns the return from "searchTwitter" into a nice looking data frame - check it out.
+```{r}
+# Tylen doesn't really tweet that much, so I tried with rebekah who's leading the HOPE research <3
+## Also, she's fun on Twitter, espacially these days... She's from pensylvania where Trump was leading for a more than a day during the election last week
+
+Tweets  <- searchTwitter("#ukraine", n = 1000, since='2022-3-31', until='2022-4-3', lang = "en", retryOnRateLimit = 120)
+#from:words, n= number of tweets, since: when, lan: language, retry: if it runs into an error it tries again
+
+tweet_ukraine<- twListToDF(Tweets)
+
+write.csv(tweet_ukraine, file = "tweet_mink.csv") #save your data if you want to.
+
+
+
+```
+
+
+
+Here is a copy of the preprocessing function you wrote in the last class
+
+DO NOT change anything inside the funtion - {inside the curly brackets}
+instead, apply the function like any other as shown right below it
+```{r}
+get_sentiment <- function(df, dictionary = "bing"){
+  
+  reg_words <- "([^A-Za-z_\\d#@']|'(?![A-Za-z_\\d#@]))"
+  
+  tidy_df <-df %>%
+    mutate(text = str_replace_all(text, "https://t.co/[A-Za-z\\d]+|http://[A-Za-z\\d]+|&amp;|&lt;|&gt;|RT|https", "")) %>% #removes homepage adresses and unecessary stuff
+    unnest_tokens(word, text, token = "regex", pattern = reg_words) %>% #removes unnests text document
+    filter(!word %in% stop_words$word) #removes stop words
+  
+## You could potentially filter out tweets starting with RT: retweets, but we got so few, so whatever
+  ## The code would be "filter(!str_detect(text, "^RT")) %>%" and come right before the  mutate function above
+  
+  sentiment_df <- tidy_df %>% 
+    inner_join(get_sentiments(dictionary))
+  
+  return(sentiment_df)
+}
+
+#Applying function:
+tweet1 <- get_sentiment(tweet_mink)
+
+# As we see Bing is not perfect - it doesn't capture to many words and it believes "Trump" is a positive word... Gosh...
+# Long live Google I guess
+
+#Make a new row in the dataframe with sentiment score of every tweet mentioning mink (e.g use lapply() or make a loop if you dare)
+tweet1$sent <- lapply(tweet1$word, sentida)
+tweet1$sent <- as.numeric(tweet1$sent)
+
+view(tweet1)
+
+```
+
+## Plotting your data
+
+```{r}
+#barplot, come on don't 
+ggplot(tweet1, aes(x=word, y=favoriteCount, fill=sentiment))+
+  geom_bar(stat='summary', fun.y =mean, width = 0.4)+
+  geom_errorbar(stat = 'summary', fun.data = mean_se, width = 0.5)+
+  labs(x = "word", y = "favourite count")+
+  theme_minimal()+ ggtitle("Bar Plot") +
+  scale_fill_brewer(palette = "Blues")+
+  theme(axis.text.x= element_text(angle=90)) #turning the angle 90 degrees
+
+
+#The famous scatterplot
+ggplot(tweet1, aes(sent, word, color= sentiment))+
+  geom_point(position= "jitter")+
+  theme(axis.text.x= element_text(angle=90))
+
+#by plotting the data, it shows that the word "smitten" is pointed as a postive word (the tools are fucking with me)
+
+
+```
+
+
+
+Exercise: 
+Just to try some stuff I'll let you play around with this little exercise :))
+You and maybe your studygroup's job is to use Twitter mining together with our functions to compare Tweets your find interesting. 
+Secondly, find the most positive hashtag wih minimum 1000 Tweets execluding retweets.
+
+Here is a nearly finished example made by me. Can U complete it?
+```{r}
+senti1 <- searchTwitter("#realDonaldTrump -filter:retweets", n = 1000, since='2020-11-02', until='2020-11-09', lang = "en", retryOnRateLimit = 120) %>% 
+twListToDF() %>% 
+get_sentiment()
+
+
+senti2  <- searchTwitter("#JoeBiden -filter:retweets", n = 1000, since='2020-11-02', until='2020-11-09', lang = "en", retryOnRateLimit = 120) %>%
+twListToDF() %>% 
+get_sentiment()
+
+
+
+#this one works, note: dont use sentida on english tweets haha
+joe  <- searchTwitter("#JoeBiden -filter:retweets", n = 1000, since='2020-06-06', until='2020-11-22', lang = "en", retryOnRateLimit = 120) %>% 
+   twListToDF() %>% 
+  get_sentiment()
+
+
+##Defining a function yourself (but not really)
+roll <- function(){
+  die <- 1:6
+  dice <- sample(die,size=2,replace=TRUE)
+  sum(dice)
+}
+
+# same function, just with filtering out Retweets
+get_sentiment <- function(df, dictionary = "bing"){
+  
+  reg_words <- "([^A-Za-z_\\d#@']|'(?![A-Za-z_\\d#@]))"
+  
+  tidy_df <-df %>%
+    filter(!str_detect(text, "^RT")) %>% # filter out tweets starting with RT: retweets
+    mutate(text = str_replace_all(text, "https://t.co/[A-Za-z\\d]+|http://[A-Za-z\\d]+|&amp;|&lt;|&gt;|RT|https", "")) %>% #removes homepage adresses and unecessary stuff
+    unnest_tokens(word, text, token = "regex", pattern = reg_words) %>% #removes unnests text document
+    filter(!word %in% stop_words$word) #removes stop word
+
+  sentiment_df <- tidy_df %>% 
+    inner_join(get_sentiments(dictionary))
+  
+  return(sentiment_df)
+}
+
+```
+
+
+## Twitter Scrape using "rtweet"
+
+_Sources_ 
+  https://rpubs.com/ben_bellman/rtweet_tidygraph
+  https://www.r-bloggers.com/2021/07/quick-and-dirty-analysis-of-a-twitter-social-network/ 
+
+```{r}
+#Loading packages
+pacman::p_load(rtweet)
+```
+
+_API check_ 
+```{r}
+#check status of api
+rate_limit()
+```
+
+### #Prolife Scrape
+
+_Scraping #Prolife & #Abortion_ 
+```{r}
+# Accessing the data (running this the first time redirects you to www to verify your api)
+
+####### Prolife
+prolife <- search_tweets("#prolife #abortion", #what to search for
+                         n = 10000, #number
+                         include_rts = TRUE, #include retweets
+                         lang= "en", #language
+                         retryonratelimit = TRUE)
+
+#filter by tweets containing only/and both #abortion and #prolife
+prolife <- prolife %>% 
+  filter(!duplicated(user_id)) %>% 
+  filter(is_retweet == "FALSE") %>% 
+  mutate(hashtags = tolower(hashtags)) %>%
+  filter(str_detect(hashtags, c("abortion", "prolife"))) 
+
+
+####### Prochoice
+prochoice <- search_tweets("#prochoice #abortion", #what to search for
+                         n = 10000, #number
+                         include_rts = TRUE, #include retweets
+                         lang= "en", #language
+                         retryonratelimit = TRUE)
+
+
+
+#filter by tweets containing only/and both #abortion and #prolife
+prochoice <- prochoice  %>% 
+  filter(!duplicated(user_id)) %>% 
+  filter(is_retweet == "FALSE") %>% 
+  mutate(hashtags = tolower(hashtags)) %>% 
+  filter(str_detect(hashtags, c("abortion", "prochoice")))
+
+
+#merging two groups together
+df <- rbind(prolife, prochoice)
+
+#making a new variable indiating being prolife or prochoice
+df$PL_or_PC <- ifelse(grepl('prolife', df$hashtags) ==TRUE, "prolife", "prochoice")
+
+df$PL_or_PC <- as.factor(df$PL_or_PC)
+```
+
+_Extracting User Data_ 
+```{r}
+# User data 
+user_data_prolife <- users_data(prolife)
+
+####### Other usable functions?
+# Get tweets data for statuses favorited by one or more target users (in this case frfrankpavone).
+frank_favorites <- get_favorites( 
+  "frfrankpavone",
+  n = 200,
+  parse = TRUE,
+  token = NULL
+) 
+
+#get information about followers
+frank_followers <- get_followers("frfrankpavone", n = 1000) # Users following Frank (in-user connection)
+# ############# hvordan får man hans mest interaktive følgere?? 
+
+
+#Get user IDs of accounts followed by target user(s)
+frank_friends <- get_friends("frfrankpavone", n = 1000) # Who Frank follows (out-user connection)
+
+# Get mentions for the authenticating user (DOES ONLY WORK FOR THE AUTHENTICATION USER)
+frank_mentions <- get_mentions(
+n = 200,
+since_id = NULL,
+max_id = NULL,
+parse = TRUE,
+token = NULL
+)
+#Returns data on up to 200 of the most recent mentions (Tweets containing a users’s screen_name) of the authenticating user.
+
+#Get user IDs of users who retweeted a given status.
+#Returns user IDs of users who retweeted a given status. At the current time, this function is limited in returning a maximum of 100 users for a given status.
+retweeters_of_a_status <- get_retweeters("1521730894398050304", n = 2)
+
+# Get the most recent retweets of a specific Twitter status
+retweets_of_a_status <- get_retweets("1521730894398050304", n = 2)
+
+#get information about a specific account
+frank <- search_users("frfrankpavone")
+
+#Get Twitter users data for given users (user IDs or screen names).
+#Returns data on up to 90,000 Twitter users. To return data on more than 90,000 users, code must be written to iterate through user IDs whilst avoiding rate limits, which reset every 15 minutes.
+frank_userdata <- lookup_users(frank_followers$user_id)
+```
+
+### Network - Game Changer
+```{r}
+#Network data 
+#Convert Twitter data into a network-friendly data frame
+#Convert Twitter data into network graph object (igraph)
+network <- network_data(df, .e = c("mention,retweet,reply"))
+
+
+graph<- network_graph(df, .e = c("mention,retweet,reply"))
+
+
+
+#initial plot
+plot(graph,vertex.size=3,
+     vertex.label.cex=0.5, 
+     vertex.label= df$PL_or_PC, #put in om de er prolife eller prochoice (column i df)
+     vertex.=11,
+     edge. =0.1,frame.width=10, layout=layout_with_kk, vertex.color="green")
+
+
+### plot 1
+plot(simplify(graph),
+     layout = layout_with_fr(graph), # Fruchterman–Reingold algorithm
+     edge.arrow.width = .001, # width of arrow heads
+     edge.arrow.size = 0.001, # length of arrow heads
+     edge.color = adjustcolor(1, alpha.f = 0.5), # color of linkages
+     vertex.size = 1, # size of nodes
+     vertex.color = colors, # color of nodes
+     vertex.frame.color = adjustcolor("black", alpha.f = 0.9), # node frames
+     vertex.label.color = "black", # label color
+     vertex.label.cex = 0.5, # label size
+     #vertex.label = df$PL_or_PC,
+     )
+
+### plot 2
+plot(simplify(graph),
+     layout = layout_with_fr(graph), # Fruchterman–Reingold algorithm
+     edge.arrow.width = .001, # width of arrow heads
+     edge.arrow.size = 0.001, # length of arrow heads
+     edge.color = adjustcolor(1, alpha.f = 0.5), # color of linkages
+     vertex.size = strength(graph), # size of nodes
+     vertex.color = colors, # color of nodes
+     vertex.frame.color = adjustcolor("black", alpha.f = 0.9), # node frames
+     vertex.label.color = ifelse(df$PL_or_PC == "prolife", "red", "black"), # label color
+     vertex.label.cex = 0.4, # label size
+     vertex.label = df$PL_or_PC,
+     main = "Users tweeting #prolife, #prochoice, and #abortion"
+     )
+
+
+
+
+
+
+net <- graph_from_data_frame(d=network_prolife , directed=T) 
+net <- simplify(net, remove.multiple = F, remove.loops = T)  #removes loops and duplicates
+as_edgelist(net, names=T)
+as_adjacency_matrix(net, attr="weight")
+
+plot(net,vertex.size=4, edge.arrow.size=.3,
+     vertex.label=network_prolife$type,
+     vertex.label.dist=1,
+      vertex.label.size=100,
+     vertex.label.color="red")
+
+##plotting
+library(igraph)
+plot(
+  graph,
+  axes = TRUE,
+  add = TRUE,
+  xlim = c(-1, 1),
+  ylim = c(-1, 1),
+  mark.groups = list(df),
+  mark.shape = 1/2,
+  mark.col = rainbow(length(mark.groups), alpha = 0.3),
+  mark.border = rainbow(length(mark.groups), alpha = 1),
+  mark.expand = 15)
+ 
+
+user_list<- list(network_prolife$type == "mention")
+
+df <- network_prolife %>% 
+  filter(type == "mention") %>% 
+  select(!from) %>% 
+  select(!to)
+
+head(df)
+
+###EXTRA
+#Adds single-point latitude and longitude variables to tweets data.
+lat_lng(x, coords = c("coords_coords", "bbox_coords", "geo_coords"))
+
+```
+
+## try on network analysis
+```{r}
+#Downloading tweets that mention @frfrankpavone
+# clear workspace and load packages
+rm(list = ls())
+
+# get most recent tweets
+user <- "frfrankpavone"
+tweets <- search_tweets(user, retryonratelimit = TRUE)
+
+
+##########ALTERNATIVE
+# Accessing the data (running this the first time redirects you to www to verify your api)
+prolife <- search_tweets("#prolife #abortion", #what to search for
+                         n = 1000, #number
+                         include_rts = TRUE, #include retweets
+                         lang= "en", #language
+                         retryonratelimit = TRUE)
+
+#filter by tweets containing only/and both #abortion and #prolife
+prolife <- prolife %>% 
+  mutate(hashtags = tolower(hashtags)) %>% 
+  filter(str_detect(hashtags, c("abortion", "prolife"))) %>% 
+  filter(!str_detect(hashtags, "prochoice")) %>% 
+  filter(is_retweet == "FALSE")
+
+
+# What's inside of the dataframe?
+dim(prolife)
+## [1] 15495    90
+
+
+names(prolife)[1:32]
+##  [1] "user_id"                "status_id"              "created_at"            
+##  [4] "screen_name"            "text"                   "source"                
+##  [7] "display_text_width"     "reply_to_status_id"     "reply_to_user_id"      
+## [10] "reply_to_screen_name"   "is_quote"               "is_retweet"            
+## [13] "favorite_count"         "retweet_count"          "quote_count"           
+## [16] "reply_count"            "hashtags"               "symbols"               
+## [19] "urls_url"               "urls_t.co"              "urls_expanded_url"     
+## [22] "media_url"              "media_t.co"             "media_expanded_url"    
+## [25] "media_type"             "ext_media_url"          "ext_media_t.co"        
+## [28] "ext_media_expanded_url" "ext_media_type"         "mentions_user_id"      
+## [31] "mentions_screen_name"   "lang"
+
+prolife[1:10,1:4]
+##                user_id           status_id          created_at     screen_name
+## 1  1048034022855790592 1272214352523931655 2020-06-14 17:08:32    HyperBaroque
+## 2   879082204005052418 1272214344957415426 2020-06-14 17:08:31  BloodymirPutin
+## 3             30737670 1272214322274545666 2020-06-14 17:08:25     Smartdragon
+## 4             30737670 1272214104921563139 2020-06-14 17:07:33     Smartdragon
+## 5             30737670 1272213404544110595 2020-06-14 17:04:46     Smartdragon
+## 6   983765495387181056 1272214302796242951 2020-06-14 17:08:21    EDNA_RFRANCO
+## 7  1106756013468856320 1272214265546641410 2020-06-14 17:08:12       Jessbun26
+## 8  1213632755814166529 1272214252707774464 2020-06-14 17:08:09     RyanLaborOV
+## 9   891603310041497600 1272214148538040322 2020-06-14 17:07:44 ViniciusN1kolod
+## 10 1270665728228818944 1272214096323239939 2020-06-14 17:07:31   PhoebeHuber10
+
+
+# select hashtags
+
+users <- unique(prolife$user_id)
+users <- as.list(users)
+## [1] "list"
+head(users)
+
+#The rtweet package returns a multitude of variables that are suitable for many different types of analyses. For our #purposes, however, we’ll only nee the “hashtags” variable, which stores the hashtags included in the different #tweets.
+
+#Creating an adjacency matrix
+As we can see, “htags” is a list-object. The elements of this list pertain the hashtags used in the different tweets. Some tweets don’t include any hashtags while other tweets include multiple hashtags. Whenever two (or more) hashtags are used in a single tweet, we can think of these hashtags as a pair. Depending on how many tweets jointly include these hashtags, the relationship between these hashtags is either rather weak or quite strong. When computing all these relationships for all possible pairs of hashtags, we arrive at the “Twittersphere” surrounding “@BernieSanders”.
+
+A practical way of storing all the hashtag relationships is a so-called “adjacency matrix”. This is square matrix with one row and one column for each hashtag. The i-j element of this matrix tells us how often tweets including hashtag i also include hashtag j.
+
+# determine unique users
+unique_users<- unique(unlist(users))
+head(unique_users)
+## [1] "Politics"       "Discord"        "2020election"   "BBNNrealNews"  
+## [5] "ROLEX"          "historicMoment"
+# create all zero adjancency matrix
+mat <- matrix(0, length(unique_users), length(unique_users))
+rownames(mat) <- unique_users
+colnames(mat) <- unique_users
+mat[1:276,1:276]
+##                Politics Discord 2020election BBNNrealNews ROLEX historicMoment
+## Politics              0       0            0            0     0              0
+## Discord               0       0            0            0     0              0
+## 2020election          0       0            0            0     0              0
+## BBNNrealNews          0       0            0            0     0              0
+## ROLEX                 0       0            0            0     0              0
+## historicMoment        0       0            0            0     0              0
+# fill adjacency matrix by looping through each tweet
+for(t in 1:length(users)){
+  
+  # select the tweet's hashtags
+  tags <- users[[t]]
+  
+  # skip to next tweet, if the current tweet has less than two hashtags
+  if(length(tags) == 1) next() 
+  
+  # ignore @mentions to Bernie Sanders
+  tags <- tags[-which(tags == "BernieSanders")]
+  
+  # add plus one to current value in adjacency matrix
+  mat[tags,tags] <- mat[tags,tags] + 1
+}
+rm(t)
+
+# no hashtag is linked to itself
+diag(mat) <- 0 # main diagonal = 0
+
+# inspect the adjacency matrix
+dim(mat)
+## [1] 1347 1347
+mat[1:276,1:276]
+##                Politics Discord 2020election BBNNrealNews ROLEX historicMoment
+## Politics              0       0            0            0     0              0
+## Discord               0       0            0            0     0              0
+## 2020election          0       0            0            1     1              1
+## BBNNrealNews          0       0            1            0     1              1
+## ROLEX                 0       0            1            1     0              1
+## historicMoment        0       0            1            1     1              0
+Creating a network
+So far we only created a matrix. Now we need to tell R that this matrix is the underlying adjacency matrix of a network. We do this using the igraph package. This powerful package is used to model and manipulate network (or “graph”) objects in R. When visualizing our Twittersphere network, we want to ignore very insignificant nodes. Otherwise the resulting image would be overwhelmed by unimportant information. In particular, we want to get rid of nodes that do not have a at least two connections to any other node in the network (including multiple mentions to the same node). In the lingo of graph theory this property of nodes is called “strength” (not to be confused with “degree”, which excludes multiple connections to the same node). Moreover, we will use different colors to identify clusters of closely connected nodes.
+
+### create network from adjancency matrix
+library(igraph)
+net <- graph_from_adjacency_matrix(mat, mode = "directed", weighted = T)
+length(V(net)) # show the number of nodes in the network
+## [1] 276
+# remove insignificant nodes
+net <- delete.vertices(net, strength(net,mode="all") < 2)
+length(V(net)) # show the number of nodes in the network
+## [1] 223
+# determine colors based on clusters in the network
+clusters <- cluster_walktrap(net, steps = 5)
+colors <- rainbow(length(unique(clusters$member)))
+colors <- adjustcolor(colors[clusters$member], alpha.f = 0.7) # add transparency
+Visualizing the network
+There are of course many ways of visualizing the same underlying adjacency matrix. A very prominent way, however, are force-directed graph drawing algorithms like that of Frucherman & Reingold (1991). In a nutshell, these algorithms run a physics simulation, in which a network’s nodes are connected by mechanical springs. Depending on how closely two nodes are related to each other, the spring connecting them will be either rather elastic or inelastic. A force directed graph-drawing algorithm then tries to position the nodes such that the forces of all springs are perfectly balanced. In effect, highly connected nodes are placed towards the center of the network, while relatively unimportant nodes are placed towards the periphery.
+
+# create pdf image
+pdf("net.pdf", width = 20, height = 20)
+
+set.seed(1) # set starting value of random number generator
+
+# plot network
+plot(simplify(net),
+     layout = layout_with_fr(net), # Fruchterman–Reingold algorithm
+     edge.arrow.width = .001, # width of arrow heads
+     edge.arrow.size = 0.001, # length of arrow heads
+     edge.color = adjustcolor(1, alpha.f = 0.05), # color of linkages
+     vertex.size = strength(net)^(1/2) / 2, # size of nodes
+     vertex.color = colors, # color of nodes
+     vertex.frame.color = adjustcolor("black", alpha.f = 0.9), # node frames
+     vertex.label.color = "black", # label color
+     vertex.label.cex = strength(net)^(1/2) / 10 , # label size
+     )
+
+# close graphics device
+graphics.off() # run this line before opening the .pdf
+
+
+Of course, the igraph package allows for a whole range of different visualization techniques. Going through the package’s many options is beyond the scope of this tutorial. If you would like to know more about how to use the igraph package to conduct network analyses this tutorial is probably a good starting point.
+```
+
+
+
+
+
+
+
+
+
+
+### #Prochoice Scrape
+
+
+## world map #ukraine
+```{r}
+#finding users by country
+user_data_ukraine %>%
+  mutate(location = str_replace(location, ".*France.*", "France"),
+  location = str_replace(location, ".*England", "United Kingdom"),
+  location = str_replace(location, ".*United Kingdom", "United Kingdom"),
+  location = str_replace(location, ".*London", "United Kingdom"),
+  location = str_replace(location, ".*Scotland", "United Kingdom"),
+  location = str_replace(location, ".*Montpellier", "France"),
+  location = str_replace(location, ".*Canada, BC.*", "Canada"),
+  location = str_replace(location, ".*New Caledonia", "France"),
+  location = str_replace(location, ".*Marseille", "France"),
+  location = str_replace(location, ".*Grenoble", "France"),
+  location = str_replace(location, ".*Perú", "Peru"),
+  location = str_replace(location, ".*Martinique", "France"),
+  location = str_replace(location, ".*La Rochelle", "France"),
+  location = str_replace(location, ".*Grenoble, Rhône-Alpes", "France"),
+  location = str_replace(location, ".*Avignon", "France"),
+  location = str_replace(location, ".*Paris", "France"),
+  location = str_replace(location, ".*paris", "France"),
+  location = str_replace(location, ".*france", "France"),
+  location = str_replace(location, ".*Bordeaux", "France"),
+  location = str_replace(location, ".*Mytilene, Lesvos, Greece", "Greece"),
+  location = str_replace(location, ".*Mytiline, Greece", "Greece"),
+  location = str_replace(location, ".*Germany.*", "Germany"),
+  location = str_replace(location, ".*Vienna, Austria", "Austria"),
+  location = str_replace(location, ".*Arusha, Tanzania", "Tanzania"),
+  location = str_replace(location, ".*Athens", "Greece"),
+  location = str_replace(location, ".*Bangor, ME", "United Kingdom"),
+  location = str_replace(location, ".*Bangor, Wales", "United Kingdom"),
+  location = str_replace(location, ".*Baton Rouge, LA", "United States of America"),
+  location = str_replace(location, ".*Lisboa, Portugal", "Portugal"),
+  location = str_replace(location, ".*Oslo", "Norway"),
+  location = str_replace(location, ".*Islamic Republic of Iran", "Iran"),
+  location = str_replace(location, ".*Madrid, España", "Spain"),
+  location = str_replace(location, ".*Madrid", "Spain"),
+  location = str_replace(location, ".*Madrid, Spain", "Spain"),
+  location = str_replace(location, ".*Rome, Italy", "Italy"),
+  location = str_replace(location, ".*Santiago, Chile", "Chile"),
+  location = str_replace(location, ".*Belém, Brazil", "Brazil"),
+  location = str_replace(location, ".*Belo Horizonte, Brazil", "Brazil"),
+  location = str_replace(location, ".*Berlin", "Germany"),
+  location = str_replace(location, ".*Mexico, ME", "Mexico"),
+  location = str_replace(location, ".*Mexico City", "Mexico"),
+  location = str_replace(location, ".*Santiago, Chile", "Chile"),
+  location = str_replace(location, ".*Ontario", "Canada"),
+  location = str_replace(location, ".*Aberdeen", "United Kingdom"),
+  location = str_replace(location, ".*Cambridge", "United Kingdom"),
+  location = str_replace(location, ".*Bologna, Emilia Romagna", "Italy"),
+  location = str_replace(location, ".*Bogotá, D.C., Colombia", "Colombia"),
+  location = str_replace(location, ".*Medellín, Colombia", "Colombia"),
+  location = str_replace(location, ".*Bruxelles, Belgique", "Belgium"),
+  location = str_replace(location, ".*Brasil", "Brazil"),
+  location = str_replace(location, ".*Budweis, Czech Republic", "Czech Republic"),
+  location = str_replace(location, ".*Calgary, Alberta", "Canada"),
+  location = str_replace(location, ".*Canada, BC", "Canada"),
+  location = str_replace(location, ".*Cardiff, Wales", "United Kingdom"),
+  location = str_replace(location, ".*Brisbane", "Australia"),
+  location = str_replace(location, ".*Sydney", "Australia"),
+  location = str_replace(location, ".*Queensland", "Australia"),
+  location = str_replace(location, ".*Australia", "Australia"),
+  location = str_replace(location, ".*Germany", "Germany"),
+  location = str_replace(location, ".*Vancouver", "Canada"),
+  location = str_replace(location, ".*Ottawa, Ontario", "Canada"),
+  location = str_replace(location, ".*Québec, Canada", "Canada"),
+  location = str_replace(location, ".*Winnipeg, Manitoba", "Canada"),
+  location = str_replace(location, ".*New South Wales", "Canada"),
+  location = str_replace(location, ".*Victoria", "Canada"),
+  location = str_replace(location, ".*British Columbia", "Canada"),
+  location = str_replace(location, ".*Norway", "Norway"),
+  location = str_replace(location, ".*Finland", "Finland"),
+  location = str_replace(location, ".*South Africa", "South Africa"),
+  location = str_replace(location, ".*Switzerland", "Switzerland"),
+  location = str_replace(location, ".*CO", "United States of America"),
+  location = str_replace(location, ".*OK", "United States of America"),
+  location = str_replace(location, ".*KS", "United States of America"),
+  location = str_replace(location, ".*MS", "United States of America"),
+  location = str_replace(location, ".*CO", "United States of America"),
+  location = str_replace(location, ".*CO", "United States of America"),
+  location = str_replace(location, ".*CO", "United States of America"),
+  location = str_replace(location, ".*CO", "United States of America"),
+  location = str_replace(location, ".*WA", "United States of America"),
+  location = str_replace(location, ".*MD", "United States of America"),
+  location = str_replace(location, ".*Colorado", "United States of America"),
+  location = str_replace(location, ".*Community of Valencia, Spain", "Spain"),
+  location = str_replace(location, ".*Dunedin City, New Zealand", "New Zealand"),
+  location = str_replace(location, ".*Rio Claro, Brasil", "Brazil"),
+  location = str_replace(location, ".*Saskatoon, Saskatchewan", "Canada"),
+  location = str_replace(location, ".*Sherbrooke, Québec", "Canada"),
+  location = str_replace(location, ".*United Kingdom.*", "United Kingdom"),
+  location = str_replace(location, ".*University of Oxford", "United Kingdom"),
+  location = str_replace(location, ".*University of St Andrews", "United Kingdom"),
+  location = str_replace(location, ".*ID", "United States of America"),
+  location = str_replace(location, ".*NE", "United States of America"),
+  location = str_replace(location, ".*United States of America, USA", "United States of America"),
+  location = str_replace(location, ".*Spain, Spain", "Spain"),
+  location = str_replace(location, ".*USA", "United States of America"),
+  location = str_replace(location, ".*Wisconsin, USA", "United States of America"),
+  location = str_replace(location, ".*Florida, USA", "United States of America"),
+  location = str_replace(location, ".*Liege, Belgium", "Belgium"),
+  location = str_replace(location, ".*Ghent, Belgium", "Belgium"),
+  location = str_replace(location, ".*Pune, India", "India"),
+  location = str_replace(location, ".*Hyderabad, India", "India"),
+  location = str_replace(location, ".*Prague, Czech Republic", "Czech Republic"),
+  location = str_replace(location, ".*Canada, BC, Canada", "Canada"),
+  location = str_replace(location, ".*CA", "United States of America"),
+  location = str_replace(location, ".*United States.*", "United States of America"),
+  location = str_replace(location, ".*DC", "United States of America"),
+  location = str_replace(location, ".*FL", "United States of America"),
+  location = str_replace(location, ".*GA", "United States of America"),
+  location = str_replace(location, ".*HI", "United States of America"),
+  location = str_replace(location, ".*ME", "United States of America"),
+  location = str_replace(location, ".*MA", "United States of America"),
+  location = str_replace(location, ".*MI", "United States of America"),
+  location = str_replace(location, ".*PA", "United States of America"),
+  location = str_replace(location, ".*NC", "United States of America"),
+  location = str_replace(location, ".*MO", "United States of America"),
+  location = str_replace(location, ".*NY", "United States of America"),
+  location = str_replace(location, ".*NH", "United States of America"),
+  location = str_replace(location, ".*IL", "United States of America"),
+  location = str_replace(location, ".*NM", "United States of America"),
+  location = str_replace(location, ".*MT", "United States of America"),
+  location = str_replace(location, ".*OR", "United States of America"),
+  location = str_replace(location, ".*WY", "United States of America"),
+  location = str_replace(location, ".*WI", "United States of America"),
+  location = str_replace(location, ".*MN", "United States of America"),
+  location = str_replace(location, ".*CT", "United States of America"),
+  location = str_replace(location, ".*TX", "United States of America"),
+  location = str_replace(location, ".*VA", "United States of America"),
+  location = str_replace(location, ".*OH", "United States of America"),
+  location = str_replace(location, ".*Massachusetts, USA", "United States of America"),
+  location = str_replace(location, ".*California, USA", "United States of America"),
+  location = str_replace(location, ".*Montréal, Québec", "Canada"),
+  location = str_replace(location, ".*Edmonton, Alberta", "Canada"),
+  location = str_replace(location, ".*Toronto, Ontario", "Canada"),
+  location = str_replace(location, ".*Canada, Canada", "Canada"),
+  location = str_replace(location, ".*Montreal", "Canada"),
+  location = str_replace(location, ".*Lisbon, Portugal", "Portugal"),
+  location = str_replace(location, ".*Coimbra, Portugal", "Portugal"),
+  location = str_replace(location, ".*Cork, Ireland", "Ireland"),
+  location = str_replace(location, ".*Dublin City, Ireland", "Ireland"),
+  location = str_replace(location, ".*Barcelona, Spain", "Spain"),
+  location = str_replace(location, ".*Barcelona", "Spain"),
+  location = str_replace(location, ".*Leipzig", "Germany"),
+  location = str_replace(location, ".*Seville, Spain", "Spain"),
+  location = str_replace(location, ".*Seville, Spain", "Spain"),
+  location = str_replace(location, ".*Buenos Aires, Argentina", "Argentina"),
+  location = str_replace(location, ".*Rio de Janeiro, Brazil", "Brazil"),
+  location = str_replace(location, ".*Canberra", "Australia"),
+  location = str_remove(location, "Global"),
+  location = str_remove(location, "Earth"),
+  location = str_remove(location, "Worldwide"),
+  location = str_remove(location, "Europe"),
+  location = str_remove(location, " "),
+  location = str_replace(location, ".*Dhaka, Bangladesh", "Bangladesh"),
+  location = str_replace(location, ".*Copenhagen, Denmark", "Denmark"),
+  location = str_replace(location, ".*Amsterdam, The Netherlands", "The Netherlands"),
+  location = str_replace(location, ".*Groningen, Nederland", "The Netherlands"),
+  location = str_replace(location, ".*Wageningen, Nederland", "The Netherlands"),
+  location = str_replace(location, ".*Aarhus, Denmark", "Denmark"),
+  location = str_replace(location, ".*Antwerp, Belgium", "Belgium"),
+  location = str_replace(location, ".*Aveiro, Portugal", "Portugal"),
+  location = str_replace(location, ".*Australia, AUS", "Australia"),
+  location = str_replace(location, ".*Australian National University", "Australia"),
+  location = str_replace(location, ".*Auckland, New Zealand", "New Zealand"),
+  location = str_replace(location, ".*Belfast, Northern Ireland", "United Kingdom"),
+  location = str_replace(location, ".*Ireland", "United Kingdom"),
+  location = str_replace(location, ".*Hobart, Tasmania", "Australia"),
+  location = str_replace(location, ".*Dhaka, Bangladesh", "Bangladesh"),
+  location = str_replace(location, ".*Nairobi, Kenya", "Kenya"),
+  location = str_replace(location, ".*Dhaka, Bangladesh", "Bangladesh"),
+  location = str_replace(location, ".*Berlin, Deutschland", "Germany"),
+  location = str_replace(location, ".*Munich, Bavaria", "Germany"),
+  location = str_replace(location, ".*Dehradun, India", "India"),
+  location = str_replace(location, ".*Bengaluru, India", "India"),
+  location = str_replace(location, ".*Berlin, Deutschland", "Germany"),
+  location = str_replace(location, ".*Deutschland", "Germany"),
+  location = str_replace(location, ".*Edinburgh", "United Kingdom"),
+  location = str_replace(location, ".*Glasgow", "United Kingdom"),
+  location = str_replace(location, ".*New York, USA", "United States of America"),
+  location = str_replace(location, ".*Washington, USA", "United States of America"),
+  location = str_replace(location, ".*California", "United States of America"),
+  location = str_replace(location, ".*California", "United States of America"),
+  location = str_replace(location, ".*Christchurch City, New Zealand", "New Zealand"),
+  location = str_replace(location, ".*Harare, Zimbabwe", "Zimbabwe"),
+  location = str_replace(location, ".*Islamabad, Pakistan", "Pakistan"),
+  location = str_replace(location, ".*Kolkata, India", "India"),
+  location = str_replace(location, ".*Lagos, Nigeria", "Nigeria"),
+  location = str_replace(location, ".*Lima, Peru", "Peru"),
+  location = str_replace(location, ".*Valparaíso, Chile", "Chile"),
+  location = str_replace(location, ".*Uppsala, Sweden", "Sweden"),
+  location = str_replace(location, ".*Uppsala, Sverige", "Sweden"),
+  location = str_replace(location, ".*Stockholm, Sweden", "Sweden"),
+  location = str_replace(location, ".*Stockholm", "Sweden"),
+  location = str_replace(location, ".*Turin, Piedmont", "Italy"),
+  location = str_replace(location, ".*University of Iceland", "Iceland"),
+  location = str_replace(location, ".*University of Helsinki", "Finland"),
+  location = str_replace(location, ".*Tucumán, Argentina", "Argentina"),
+  location = str_replace(location, ".*The Hague, The Netherlands", "The Netherlands"),
+  location = str_replace(location, ".*UK", "United Kingdom")) %>%
+  count(location, sort = TRUE) %>%
+  #slice(-40) %>%
+  head(n = 45) -> users_by_country_ukraine
+
+
+##plotting
+pacman::p_load(rworldmap, classInt)
+spdf <- joinCountryData2Map(users_by_country_ukraine,
+joinCode="NAME",
+nameJoinColumn="location",
+verbose=TRUE)
+## 43 codes from your data successfully matched countries in the map
+## 2 codes from your data failed to match with a country code in the map
+## failedCodes failedCountries
+## [1,] "" ""
+## [2,] "" " "
+## 200 codes from the map weren't represented in your data
+classInt <- classIntervals(spdf$n,
+n=9,
+style = "jenks")
+catMethod <- classInt[["brks"]]
+library(RColorBrewer)
+colourPalette <- brewer.pal(9,'RdPu')
+mapParams <- mapCountryData(spdf,
+nameColumnToPlot="n",
+addLegend=FALSE,
+catMethod = catMethod,
+colourPalette=colourPalette,
+mapTitle="Number of users per country #ukraine")
+do.call(addMapLegend,
+c(mapParams,
+legendLabels="all",
+legendWidth=0.5,
+legendIntervals="data",
+legendMar = 2))
+
+# how many of the users are verified
+user_data_ukraine %>%
+count(verified) #only 26 are verified
+
+
+# details about verified users
+verified_user_data_ukraine<- user_data_ukraine %>%
+filter(verified==TRUE) %>%
+select(name, screen_name, location, followers_count) %>%
+arrange(-followers_count)
+
+```
+
+## world map #russia
+```{r}
+#finding users by country
+user_data_russia %>%
+  mutate(location = str_replace(location, ".*France.*", "France"),
+  location = str_replace(location, ".*England", "United Kingdom"),
+  location = str_replace(location, ".*United Kingdom", "United Kingdom"),
+  location = str_replace(location, ".*London", "United Kingdom"),
+  location = str_replace(location, ".*Scotland", "United Kingdom"),
+  location = str_replace(location, ".*Montpellier", "France"),
+  location = str_replace(location, ".*Canada, BC.*", "Canada"),
+  location = str_replace(location, ".*New Caledonia", "France"),
+  location = str_replace(location, ".*Marseille", "France"),
+  location = str_replace(location, ".*Grenoble", "France"),
+  location = str_replace(location, ".*Perú", "Peru"),
+  location = str_replace(location, ".*Martinique", "France"),
+  location = str_replace(location, ".*La Rochelle", "France"),
+  location = str_replace(location, ".*Grenoble, Rhône-Alpes", "France"),
+  location = str_replace(location, ".*Avignon", "France"),
+  location = str_replace(location, ".*Paris", "France"),
+  location = str_replace(location, ".*paris", "France"),
+  location = str_replace(location, ".*france", "France"),
+  location = str_replace(location, ".*Bordeaux", "France"),
+  location = str_replace(location, ".*Mytilene, Lesvos, Greece", "Greece"),
+  location = str_replace(location, ".*Mytiline, Greece", "Greece"),
+  location = str_replace(location, ".*Germany.*", "Germany"),
+  location = str_replace(location, ".*Vienna, Austria", "Austria"),
+  location = str_replace(location, ".*Arusha, Tanzania", "Tanzania"),
+  location = str_replace(location, ".*Athens", "Greece"),
+  location = str_replace(location, ".*Bangor, ME", "United Kingdom"),
+  location = str_replace(location, ".*Bangor, Wales", "United Kingdom"),
+  location = str_replace(location, ".*Baton Rouge, LA", "United States of America"),
+  location = str_replace(location, ".*Lisboa, Portugal", "Portugal"),
+  location = str_replace(location, ".*Oslo", "Norway"),
+  location = str_replace(location, ".*Islamic Republic of Iran", "Iran"),
+  location = str_replace(location, ".*Madrid, España", "Spain"),
+  location = str_replace(location, ".*Madrid", "Spain"),
+  location = str_replace(location, ".*Madrid, Spain", "Spain"),
+  location = str_replace(location, ".*Rome, Italy", "Italy"),
+  location = str_replace(location, ".*Santiago, Chile", "Chile"),
+  location = str_replace(location, ".*Belém, Brazil", "Brazil"),
+  location = str_replace(location, ".*Belo Horizonte, Brazil", "Brazil"),
+  location = str_replace(location, ".*Berlin", "Germany"),
+  location = str_replace(location, ".*Mexico, ME", "Mexico"),
+  location = str_replace(location, ".*Mexico City", "Mexico"),
+  location = str_replace(location, ".*Santiago, Chile", "Chile"),
+  location = str_replace(location, ".*Ontario", "Canada"),
+  location = str_replace(location, ".*Aberdeen", "United Kingdom"),
+  location = str_replace(location, ".*Cambridge", "United Kingdom"),
+  location = str_replace(location, ".*Bologna, Emilia Romagna", "Italy"),
+  location = str_replace(location, ".*Bogotá, D.C., Colombia", "Colombia"),
+  location = str_replace(location, ".*Medellín, Colombia", "Colombia"),
+  location = str_replace(location, ".*Bruxelles, Belgique", "Belgium"),
+  location = str_replace(location, ".*Brasil", "Brazil"),
+  location = str_replace(location, ".*Budweis, Czech Republic", "Czech Republic"),
+  location = str_replace(location, ".*Calgary, Alberta", "Canada"),
+  location = str_replace(location, ".*Canada, BC", "Canada"),
+  location = str_replace(location, ".*Cardiff, Wales", "United Kingdom"),
+  location = str_replace(location, ".*Brisbane", "Australia"),
+  location = str_replace(location, ".*Sydney", "Australia"),
+  location = str_replace(location, ".*Queensland", "Australia"),
+  location = str_replace(location, ".*Australia", "Australia"),
+  location = str_replace(location, ".*Germany", "Germany"),
+  location = str_replace(location, ".*Vancouver", "Canada"),
+  location = str_replace(location, ".*Ottawa, Ontario", "Canada"),
+  location = str_replace(location, ".*Québec, Canada", "Canada"),
+  location = str_replace(location, ".*Winnipeg, Manitoba", "Canada"),
+  location = str_replace(location, ".*New South Wales", "Canada"),
+  location = str_replace(location, ".*Victoria", "Canada"),
+  location = str_replace(location, ".*British Columbia", "Canada"),
+  location = str_replace(location, ".*Norway", "Norway"),
+  location = str_replace(location, ".*Finland", "Finland"),
+  location = str_replace(location, ".*South Africa", "South Africa"),
+  location = str_replace(location, ".*Switzerland", "Switzerland"),
+  location = str_replace(location, ".*CO", "United States of America"),
+  location = str_replace(location, ".*OK", "United States of America"),
+  location = str_replace(location, ".*KS", "United States of America"),
+  location = str_replace(location, ".*MS", "United States of America"),
+  location = str_replace(location, ".*CO", "United States of America"),
+  location = str_replace(location, ".*CO", "United States of America"),
+  location = str_replace(location, ".*CO", "United States of America"),
+  location = str_replace(location, ".*CO", "United States of America"),
+  location = str_replace(location, ".*WA", "United States of America"),
+  location = str_replace(location, ".*MD", "United States of America"),
+  location = str_replace(location, ".*Colorado", "United States of America"),
+  location = str_replace(location, ".*Community of Valencia, Spain", "Spain"),
+  location = str_replace(location, ".*Dunedin City, New Zealand", "New Zealand"),
+  location = str_replace(location, ".*Rio Claro, Brasil", "Brazil"),
+  location = str_replace(location, ".*Saskatoon, Saskatchewan", "Canada"),
+  location = str_replace(location, ".*Sherbrooke, Québec", "Canada"),
+  location = str_replace(location, ".*United Kingdom.*", "United Kingdom"),
+  location = str_replace(location, ".*University of Oxford", "United Kingdom"),
+  location = str_replace(location, ".*University of St Andrews", "United Kingdom"),
+  location = str_replace(location, ".*ID", "United States of America"),
+  location = str_replace(location, ".*NE", "United States of America"),
+  location = str_replace(location, ".*United States of America, USA", "United States of America"),
+  location = str_replace(location, ".*Spain, Spain", "Spain"),
+  location = str_replace(location, ".*USA", "United States of America"),
+  location = str_replace(location, ".*Wisconsin, USA", "United States of America"),
+  location = str_replace(location, ".*Florida, USA", "United States of America"),
+  location = str_replace(location, ".*Liege, Belgium", "Belgium"),
+  location = str_replace(location, ".*Ghent, Belgium", "Belgium"),
+  location = str_replace(location, ".*Pune, India", "India"),
+  location = str_replace(location, ".*Hyderabad, India", "India"),
+  location = str_replace(location, ".*Prague, Czech Republic", "Czech Republic"),
+  location = str_replace(location, ".*Canada, BC, Canada", "Canada"),
+  location = str_replace(location, ".*CA", "United States of America"),
+  location = str_replace(location, ".*United States.*", "United States of America"),
+  location = str_replace(location, ".*DC", "United States of America"),
+  location = str_replace(location, ".*FL", "United States of America"),
+  location = str_replace(location, ".*GA", "United States of America"),
+  location = str_replace(location, ".*HI", "United States of America"),
+  location = str_replace(location, ".*ME", "United States of America"),
+  location = str_replace(location, ".*MA", "United States of America"),
+  location = str_replace(location, ".*MI", "United States of America"),
+  location = str_replace(location, ".*PA", "United States of America"),
+  location = str_replace(location, ".*NC", "United States of America"),
+  location = str_replace(location, ".*MO", "United States of America"),
+  location = str_replace(location, ".*NY", "United States of America"),
+  location = str_replace(location, ".*NH", "United States of America"),
+  location = str_replace(location, ".*IL", "United States of America"),
+  location = str_replace(location, ".*NM", "United States of America"),
+  location = str_replace(location, ".*MT", "United States of America"),
+  location = str_replace(location, ".*OR", "United States of America"),
+  location = str_replace(location, ".*WY", "United States of America"),
+  location = str_replace(location, ".*WI", "United States of America"),
+  location = str_replace(location, ".*MN", "United States of America"),
+  location = str_replace(location, ".*CT", "United States of America"),
+  location = str_replace(location, ".*TX", "United States of America"),
+  location = str_replace(location, ".*VA", "United States of America"),
+  location = str_replace(location, ".*OH", "United States of America"),
+  location = str_replace(location, ".*Massachusetts, USA", "United States of America"),
+  location = str_replace(location, ".*California, USA", "United States of America"),
+  location = str_replace(location, ".*Montréal, Québec", "Canada"),
+  location = str_replace(location, ".*Edmonton, Alberta", "Canada"),
+  location = str_replace(location, ".*Toronto, Ontario", "Canada"),
+  location = str_replace(location, ".*Canada, Canada", "Canada"),
+  location = str_replace(location, ".*Montreal", "Canada"),
+  location = str_replace(location, ".*Lisbon, Portugal", "Portugal"),
+  location = str_replace(location, ".*Coimbra, Portugal", "Portugal"),
+  location = str_replace(location, ".*Cork, Ireland", "Ireland"),
+  location = str_replace(location, ".*Dublin City, Ireland", "Ireland"),
+  location = str_replace(location, ".*Barcelona, Spain", "Spain"),
+  location = str_replace(location, ".*Barcelona", "Spain"),
+  location = str_replace(location, ".*Leipzig", "Germany"),
+  location = str_replace(location, ".*Seville, Spain", "Spain"),
+  location = str_replace(location, ".*Seville, Spain", "Spain"),
+  location = str_replace(location, ".*Buenos Aires, Argentina", "Argentina"),
+  location = str_replace(location, ".*Rio de Janeiro, Brazil", "Brazil"),
+  location = str_replace(location, ".*Canberra", "Australia"),
+  location = str_remove(location, "Global"),
+  location = str_remove(location, "Earth"),
+  location = str_remove(location, "Worldwide"),
+  location = str_remove(location, "Europe"),
+  location = str_remove(location, " "),
+  location = str_replace(location, ".*Dhaka, Bangladesh", "Bangladesh"),
+  location = str_replace(location, ".*Copenhagen, Denmark", "Denmark"),
+  location = str_replace(location, ".*Amsterdam, The Netherlands", "The Netherlands"),
+  location = str_replace(location, ".*Groningen, Nederland", "The Netherlands"),
+  location = str_replace(location, ".*Wageningen, Nederland", "The Netherlands"),
+  location = str_replace(location, ".*Aarhus, Denmark", "Denmark"),
+  location = str_replace(location, ".*Antwerp, Belgium", "Belgium"),
+  location = str_replace(location, ".*Aveiro, Portugal", "Portugal"),
+  location = str_replace(location, ".*Australia, AUS", "Australia"),
+  location = str_replace(location, ".*Australian National University", "Australia"),
+  location = str_replace(location, ".*Auckland, New Zealand", "New Zealand"),
+  location = str_replace(location, ".*Belfast, Northern Ireland", "United Kingdom"),
+  location = str_replace(location, ".*Ireland", "United Kingdom"),
+  location = str_replace(location, ".*Hobart, Tasmania", "Australia"),
+  location = str_replace(location, ".*Dhaka, Bangladesh", "Bangladesh"),
+  location = str_replace(location, ".*Nairobi, Kenya", "Kenya"),
+  location = str_replace(location, ".*Dhaka, Bangladesh", "Bangladesh"),
+  location = str_replace(location, ".*Berlin, Deutschland", "Germany"),
+  location = str_replace(location, ".*Munich, Bavaria", "Germany"),
+  location = str_replace(location, ".*Dehradun, India", "India"),
+  location = str_replace(location, ".*Bengaluru, India", "India"),
+  location = str_replace(location, ".*Berlin, Deutschland", "Germany"),
+  location = str_replace(location, ".*Deutschland", "Germany"),
+  location = str_replace(location, ".*Edinburgh", "United Kingdom"),
+  location = str_replace(location, ".*Glasgow", "United Kingdom"),
+  location = str_replace(location, ".*New York, USA", "United States of America"),
+  location = str_replace(location, ".*Washington, USA", "United States of America"),
+  location = str_replace(location, ".*California", "United States of America"),
+  location = str_replace(location, ".*California", "United States of America"),
+  location = str_replace(location, ".*Christchurch City, New Zealand", "New Zealand"),
+  location = str_replace(location, ".*Harare, Zimbabwe", "Zimbabwe"),
+  location = str_replace(location, ".*Islamabad, Pakistan", "Pakistan"),
+  location = str_replace(location, ".*Kolkata, India", "India"),
+  location = str_replace(location, ".*Lagos, Nigeria", "Nigeria"),
+  location = str_replace(location, ".*Lima, Peru", "Peru"),
+  location = str_replace(location, ".*Valparaíso, Chile", "Chile"),
+  location = str_replace(location, ".*Uppsala, Sweden", "Sweden"),
+  location = str_replace(location, ".*Uppsala, Sverige", "Sweden"),
+  location = str_replace(location, ".*Stockholm, Sweden", "Sweden"),
+  location = str_replace(location, ".*Stockholm", "Sweden"),
+  location = str_replace(location, ".*Turin, Piedmont", "Italy"),
+  location = str_replace(location, ".*University of Iceland", "Iceland"),
+  location = str_replace(location, ".*University of Helsinki", "Finland"),
+  location = str_replace(location, ".*Tucumán, Argentina", "Argentina"),
+  location = str_replace(location, ".*The Hague, The Netherlands", "The Netherlands"),
+  location = str_replace(location, ".*UK", "United Kingdom")) %>%
+  count(location, sort = TRUE) %>%
+  #slice(-40) %>%
+  head(n = 45) -> users_by_country_russia
+
+
+##plotting
+pacman::p_load(rworldmap, classInt)
+spdf <- joinCountryData2Map(users_by_country_russia,
+joinCode="NAME",
+nameJoinColumn="location",
+verbose=TRUE)
+## 43 codes from your data successfully matched countries in the map
+## 2 codes from your data failed to match with a country code in the map
+## failedCodes failedCountries
+## [1,] "" ""
+## [2,] "" " "
+## 200 codes from the map weren't represented in your data
+classInt <- classIntervals(spdf$n,
+n=9,
+style = "jenks")
+catMethod <- classInt[["brks"]]
+library(RColorBrewer)
+colourPalette <- brewer.pal(9,'RdPu')
+mapParams <- mapCountryData(spdf,
+nameColumnToPlot="n",
+addLegend=FALSE,
+catMethod = catMethod,
+colourPalette=colourPalette,
+mapTitle="Number of users per country #russia")
+do.call(addMapLegend,
+c(mapParams,
+legendLabels="all",
+legendWidth=0.5,
+legendIntervals="data",
+legendMar = 2))
+
+# how many of the users are verified
+user_data_russia%>%
+count(verified) #only 26 are verified
+
+
+# details about verified users
+verified_user_data_russia<- user_data_russia %>%
+filter(verified==TRUE) %>%
+select(name, screen_name, location, followers_count) %>%
+arrange(-followers_count)
+```
+
+## world map #putin
+```{r}
+#finding users by country
+user_data_putin %>%
+  mutate(location = str_replace(location, ".*France.*", "France"),
+  location = str_replace(location, ".*England", "United Kingdom"),
+  location = str_replace(location, ".*United Kingdom", "United Kingdom"),
+  location = str_replace(location, ".*London", "United Kingdom"),
+  location = str_replace(location, ".*Scotland", "United Kingdom"),
+  location = str_replace(location, ".*Montpellier", "France"),
+  location = str_replace(location, ".*Canada, BC.*", "Canada"),
+  location = str_replace(location, ".*New Caledonia", "France"),
+  location = str_replace(location, ".*Marseille", "France"),
+  location = str_replace(location, ".*Grenoble", "France"),
+  location = str_replace(location, ".*Perú", "Peru"),
+  location = str_replace(location, ".*Martinique", "France"),
+  location = str_replace(location, ".*La Rochelle", "France"),
+  location = str_replace(location, ".*Grenoble, Rhône-Alpes", "France"),
+  location = str_replace(location, ".*Avignon", "France"),
+  location = str_replace(location, ".*Paris", "France"),
+  location = str_replace(location, ".*paris", "France"),
+  location = str_replace(location, ".*france", "France"),
+  location = str_replace(location, ".*Bordeaux", "France"),
+  location = str_replace(location, ".*Mytilene, Lesvos, Greece", "Greece"),
+  location = str_replace(location, ".*Mytiline, Greece", "Greece"),
+  location = str_replace(location, ".*Germany.*", "Germany"),
+  location = str_replace(location, ".*Vienna, Austria", "Austria"),
+  location = str_replace(location, ".*Arusha, Tanzania", "Tanzania"),
+  location = str_replace(location, ".*Athens", "Greece"),
+  location = str_replace(location, ".*Bangor, ME", "United Kingdom"),
+  location = str_replace(location, ".*Bangor, Wales", "United Kingdom"),
+  location = str_replace(location, ".*Baton Rouge, LA", "United States of America"),
+  location = str_replace(location, ".*Lisboa, Portugal", "Portugal"),
+  location = str_replace(location, ".*Oslo", "Norway"),
+  location = str_replace(location, ".*Islamic Republic of Iran", "Iran"),
+  location = str_replace(location, ".*Madrid, España", "Spain"),
+  location = str_replace(location, ".*Madrid", "Spain"),
+  location = str_replace(location, ".*Madrid, Spain", "Spain"),
+  location = str_replace(location, ".*Rome, Italy", "Italy"),
+  location = str_replace(location, ".*Santiago, Chile", "Chile"),
+  location = str_replace(location, ".*Belém, Brazil", "Brazil"),
+  location = str_replace(location, ".*Belo Horizonte, Brazil", "Brazil"),
+  location = str_replace(location, ".*Berlin", "Germany"),
+  location = str_replace(location, ".*Mexico, ME", "Mexico"),
+  location = str_replace(location, ".*Mexico City", "Mexico"),
+  location = str_replace(location, ".*Santiago, Chile", "Chile"),
+  location = str_replace(location, ".*Ontario", "Canada"),
+  location = str_replace(location, ".*Aberdeen", "United Kingdom"),
+  location = str_replace(location, ".*Cambridge", "United Kingdom"),
+  location = str_replace(location, ".*Bologna, Emilia Romagna", "Italy"),
+  location = str_replace(location, ".*Bogotá, D.C., Colombia", "Colombia"),
+  location = str_replace(location, ".*Medellín, Colombia", "Colombia"),
+  location = str_replace(location, ".*Bruxelles, Belgique", "Belgium"),
+  location = str_replace(location, ".*Brasil", "Brazil"),
+  location = str_replace(location, ".*Budweis, Czech Republic", "Czech Republic"),
+  location = str_replace(location, ".*Calgary, Alberta", "Canada"),
+  location = str_replace(location, ".*Canada, BC", "Canada"),
+  location = str_replace(location, ".*Cardiff, Wales", "United Kingdom"),
+  location = str_replace(location, ".*Brisbane", "Australia"),
+  location = str_replace(location, ".*Sydney", "Australia"),
+  location = str_replace(location, ".*Queensland", "Australia"),
+  location = str_replace(location, ".*Australia", "Australia"),
+  location = str_replace(location, ".*Germany", "Germany"),
+  location = str_replace(location, ".*Vancouver", "Canada"),
+  location = str_replace(location, ".*Ottawa, Ontario", "Canada"),
+  location = str_replace(location, ".*Québec, Canada", "Canada"),
+  location = str_replace(location, ".*Winnipeg, Manitoba", "Canada"),
+  location = str_replace(location, ".*New South Wales", "Canada"),
+  location = str_replace(location, ".*Victoria", "Canada"),
+  location = str_replace(location, ".*British Columbia", "Canada"),
+  location = str_replace(location, ".*Norway", "Norway"),
+  location = str_replace(location, ".*Finland", "Finland"),
+  location = str_replace(location, ".*South Africa", "South Africa"),
+  location = str_replace(location, ".*Switzerland", "Switzerland"),
+  location = str_replace(location, ".*CO", "United States of America"),
+  location = str_replace(location, ".*OK", "United States of America"),
+  location = str_replace(location, ".*KS", "United States of America"),
+  location = str_replace(location, ".*MS", "United States of America"),
+  location = str_replace(location, ".*CO", "United States of America"),
+  location = str_replace(location, ".*CO", "United States of America"),
+  location = str_replace(location, ".*CO", "United States of America"),
+  location = str_replace(location, ".*CO", "United States of America"),
+  location = str_replace(location, ".*WA", "United States of America"),
+  location = str_replace(location, ".*MD", "United States of America"),
+  location = str_replace(location, ".*Colorado", "United States of America"),
+  location = str_replace(location, ".*Community of Valencia, Spain", "Spain"),
+  location = str_replace(location, ".*Dunedin City, New Zealand", "New Zealand"),
+  location = str_replace(location, ".*Rio Claro, Brasil", "Brazil"),
+  location = str_replace(location, ".*Saskatoon, Saskatchewan", "Canada"),
+  location = str_replace(location, ".*Sherbrooke, Québec", "Canada"),
+  location = str_replace(location, ".*United Kingdom.*", "United Kingdom"),
+  location = str_replace(location, ".*University of Oxford", "United Kingdom"),
+  location = str_replace(location, ".*University of St Andrews", "United Kingdom"),
+  location = str_replace(location, ".*ID", "United States of America"),
+  location = str_replace(location, ".*NE", "United States of America"),
+  location = str_replace(location, ".*United States of America, USA", "United States of America"),
+  location = str_replace(location, ".*Spain, Spain", "Spain"),
+  location = str_replace(location, ".*USA", "United States of America"),
+  location = str_replace(location, ".*Wisconsin, USA", "United States of America"),
+  location = str_replace(location, ".*Florida, USA", "United States of America"),
+  location = str_replace(location, ".*Liege, Belgium", "Belgium"),
+  location = str_replace(location, ".*Ghent, Belgium", "Belgium"),
+  location = str_replace(location, ".*Pune, India", "India"),
+  location = str_replace(location, ".*Hyderabad, India", "India"),
+  location = str_replace(location, ".*Prague, Czech Republic", "Czech Republic"),
+  location = str_replace(location, ".*Canada, BC, Canada", "Canada"),
+  location = str_replace(location, ".*CA", "United States of America"),
+  location = str_replace(location, ".*United States.*", "United States of America"),
+  location = str_replace(location, ".*DC", "United States of America"),
+  location = str_replace(location, ".*FL", "United States of America"),
+  location = str_replace(location, ".*GA", "United States of America"),
+  location = str_replace(location, ".*HI", "United States of America"),
+  location = str_replace(location, ".*ME", "United States of America"),
+  location = str_replace(location, ".*MA", "United States of America"),
+  location = str_replace(location, ".*MI", "United States of America"),
+  location = str_replace(location, ".*PA", "United States of America"),
+  location = str_replace(location, ".*NC", "United States of America"),
+  location = str_replace(location, ".*MO", "United States of America"),
+  location = str_replace(location, ".*NY", "United States of America"),
+  location = str_replace(location, ".*NH", "United States of America"),
+  location = str_replace(location, ".*IL", "United States of America"),
+  location = str_replace(location, ".*NM", "United States of America"),
+  location = str_replace(location, ".*MT", "United States of America"),
+  location = str_replace(location, ".*OR", "United States of America"),
+  location = str_replace(location, ".*WY", "United States of America"),
+  location = str_replace(location, ".*WI", "United States of America"),
+  location = str_replace(location, ".*MN", "United States of America"),
+  location = str_replace(location, ".*CT", "United States of America"),
+  location = str_replace(location, ".*TX", "United States of America"),
+  location = str_replace(location, ".*VA", "United States of America"),
+  location = str_replace(location, ".*OH", "United States of America"),
+  location = str_replace(location, ".*Massachusetts, USA", "United States of America"),
+  location = str_replace(location, ".*California, USA", "United States of America"),
+  location = str_replace(location, ".*Montréal, Québec", "Canada"),
+  location = str_replace(location, ".*Edmonton, Alberta", "Canada"),
+  location = str_replace(location, ".*Toronto, Ontario", "Canada"),
+  location = str_replace(location, ".*Canada, Canada", "Canada"),
+  location = str_replace(location, ".*Montreal", "Canada"),
+  location = str_replace(location, ".*Lisbon, Portugal", "Portugal"),
+  location = str_replace(location, ".*Coimbra, Portugal", "Portugal"),
+  location = str_replace(location, ".*Cork, Ireland", "Ireland"),
+  location = str_replace(location, ".*Dublin City, Ireland", "Ireland"),
+  location = str_replace(location, ".*Barcelona, Spain", "Spain"),
+  location = str_replace(location, ".*Barcelona", "Spain"),
+  location = str_replace(location, ".*Leipzig", "Germany"),
+  location = str_replace(location, ".*Seville, Spain", "Spain"),
+  location = str_replace(location, ".*Seville, Spain", "Spain"),
+  location = str_replace(location, ".*Buenos Aires, Argentina", "Argentina"),
+  location = str_replace(location, ".*Rio de Janeiro, Brazil", "Brazil"),
+  location = str_replace(location, ".*Canberra", "Australia"),
+  location = str_remove(location, "Global"),
+  location = str_remove(location, "Earth"),
+  location = str_remove(location, "Worldwide"),
+  location = str_remove(location, "Europe"),
+  location = str_remove(location, " "),
+  location = str_replace(location, ".*Dhaka, Bangladesh", "Bangladesh"),
+  location = str_replace(location, ".*Copenhagen, Denmark", "Denmark"),
+  location = str_replace(location, ".*Amsterdam, The Netherlands", "The Netherlands"),
+  location = str_replace(location, ".*Groningen, Nederland", "The Netherlands"),
+  location = str_replace(location, ".*Wageningen, Nederland", "The Netherlands"),
+  location = str_replace(location, ".*Aarhus, Denmark", "Denmark"),
+  location = str_replace(location, ".*Antwerp, Belgium", "Belgium"),
+  location = str_replace(location, ".*Aveiro, Portugal", "Portugal"),
+  location = str_replace(location, ".*Australia, AUS", "Australia"),
+  location = str_replace(location, ".*Australian National University", "Australia"),
+  location = str_replace(location, ".*Auckland, New Zealand", "New Zealand"),
+  location = str_replace(location, ".*Belfast, Northern Ireland", "United Kingdom"),
+  location = str_replace(location, ".*Ireland", "United Kingdom"),
+  location = str_replace(location, ".*Hobart, Tasmania", "Australia"),
+  location = str_replace(location, ".*Dhaka, Bangladesh", "Bangladesh"),
+  location = str_replace(location, ".*Nairobi, Kenya", "Kenya"),
+  location = str_replace(location, ".*Dhaka, Bangladesh", "Bangladesh"),
+  location = str_replace(location, ".*Berlin, Deutschland", "Germany"),
+  location = str_replace(location, ".*Munich, Bavaria", "Germany"),
+  location = str_replace(location, ".*Dehradun, India", "India"),
+  location = str_replace(location, ".*Bengaluru, India", "India"),
+  location = str_replace(location, ".*Berlin, Deutschland", "Germany"),
+  location = str_replace(location, ".*Deutschland", "Germany"),
+  location = str_replace(location, ".*Edinburgh", "United Kingdom"),
+  location = str_replace(location, ".*Glasgow", "United Kingdom"),
+  location = str_replace(location, ".*New York, USA", "United States of America"),
+  location = str_replace(location, ".*Washington, USA", "United States of America"),
+  location = str_replace(location, ".*California", "United States of America"),
+  location = str_replace(location, ".*California", "United States of America"),
+  location = str_replace(location, ".*Christchurch City, New Zealand", "New Zealand"),
+  location = str_replace(location, ".*Harare, Zimbabwe", "Zimbabwe"),
+  location = str_replace(location, ".*Islamabad, Pakistan", "Pakistan"),
+  location = str_replace(location, ".*Kolkata, India", "India"),
+  location = str_replace(location, ".*Lagos, Nigeria", "Nigeria"),
+  location = str_replace(location, ".*Lima, Peru", "Peru"),
+  location = str_replace(location, ".*Valparaíso, Chile", "Chile"),
+  location = str_replace(location, ".*Uppsala, Sweden", "Sweden"),
+  location = str_replace(location, ".*Uppsala, Sverige", "Sweden"),
+  location = str_replace(location, ".*Stockholm, Sweden", "Sweden"),
+  location = str_replace(location, ".*Stockholm", "Sweden"),
+  location = str_replace(location, ".*Turin, Piedmont", "Italy"),
+  location = str_replace(location, ".*University of Iceland", "Iceland"),
+  location = str_replace(location, ".*University of Helsinki", "Finland"),
+  location = str_replace(location, ".*Tucumán, Argentina", "Argentina"),
+  location = str_replace(location, ".*The Hague, The Netherlands", "The Netherlands"),
+  location = str_replace(location, ".*UK", "United Kingdom")) %>%
+  count(location, sort = TRUE) %>%
+  #slice(-40) %>%
+  head(n = 45) -> users_by_country_putin
+
+
+##plotting
+pacman::p_load(rworldmap, classInt)
+spdf <- joinCountryData2Map(users_by_country_putin,
+joinCode="NAME",
+nameJoinColumn="location",
+verbose=TRUE)
+## 43 codes from your data successfully matched countries in the map
+## 2 codes from your data failed to match with a country code in the map
+## failedCodes failedCountries
+## [1,] "" ""
+## [2,] "" " "
+## 200 codes from the map weren't represented in your data
+classInt <- classIntervals(spdf$n,
+n=9,
+style = "jenks")
+catMethod <- classInt[["brks"]]
+library(RColorBrewer)
+colourPalette <- brewer.pal(9,'RdPu')
+mapParams <- mapCountryData(spdf,
+nameColumnToPlot="n",
+addLegend=FALSE,
+catMethod = catMethod,
+colourPalette=colourPalette,
+mapTitle="Number of users per country #putin")
+do.call(addMapLegend,
+c(mapParams,
+legendLabels="all",
+legendWidth=0.5,
+legendIntervals="data",
+legendMar = 2))
+
+# how many of the users are verified
+user_data_putin%>%
+count(verified) #only 26 are verified
+
+
+# details about verified users
+verified_user_data_putin<- user_data_putin %>%
+filter(verified==TRUE) %>%
+select(name, screen_name, location, followers_count) %>%
+arrange(-followers_count)
+
+```
+
+
+
+# Network analysis
+```{r}
+pacman::p_load(rtweet, academictwitteR)
+
+
+
+# Accessing the data (running this the first time redirects you to www to verify your api)
+# returns data from the last 6-9 days
+ukraine <- search_tweets("#ukraine", #what to search for
+                         n = 1000, #number
+                         include_rts = FALSE, #include retweets
+                         lang= "en", #language
+                         retryonratelimit = TRUE)
+
+
+zelensky <- lookup_users("ZelenskyyUa")
+
+followers <- get_followers(user = "ZelenskyyUa",
+n = 10000,
+retryonratelimit = T)
+
+#From their id, I can get the same details I got on my account using lookup_users. This function is not vectorized, therefore I use a loop. Takes some time so I saved the results and load them.
+details_followers <- NULL
+for (i in 1:length(followers$user_id)){
+tmp <- try(lookup_users(followers$user_id[i], retryonratelimit = TRUE), silent = TRUE)
+if (length(tmp) == 1){
+next
+} else {
+tmp$listed_count <- NULL # get rid of this column which raised some format issues, we do not it anyway
+details_followers <- bind_rows(details_followers, tmp)
+}
+}
+save(details_followers, file = "details_followers.csv")
+
+
+df <- read_csv("details_followers.csv")
+
+#loading the data
+load("dat/details_followers.RData")
+names(details_followers)
+```
+
+
